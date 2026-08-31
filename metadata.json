@@ -1,0 +1,8 @@
+{
+  "name": "CFIS - Painel de Criticidade & Gestão Acadêmica CGD",
+  "description": "Dashboard de monitoramento de criticidade dos alunos CFIS, controle de faltas, disciplinas pendentes, sincronização e scraping automatizado com o sistema CGD, ocorrências e segurança RLS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
