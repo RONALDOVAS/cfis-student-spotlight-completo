@@ -26,38 +26,22 @@ export interface CgdSendResult {
   status: 'PENDENTE' | 'ENVIANDO' | 'ENVIADO' | 'ERRO' | 'REQUER_REENVIO';
 }
 
-// Trava de idempotência em memória para prevenir múltiplos cliques simultâneos
 const activeSubmissionsLock = new Set<string>();
 
-/**
- * Envia uma ocorrência registrada no CFIS Student Spotlight para o backend seguro
- * que intermedia a comunicação com o CGD sem expor credenciais ou tokens no navegador.
- */
 export async function enviarOcorrenciaParaCgd(
   payload: CgdSendOccurrencePayload,
   currentUser: UserProfile
 ): Promise<CgdSendResult> {
   const lockKey = `${payload.contrato}_${payload.titulo || 'ocorrencia'}`;
 
-  // 1. Verificação de Idempotência
   if (activeSubmissionsLock.has(lockKey)) {
-    return {
-      success: false,
-      status: 'ENVIANDO',
-      mensagem: 'Envio já em processamento para este contrato. Evitando duplicação no CGD.',
-    };
+    return { success: false, status: 'ENVIANDO', mensagem: 'Envio já em processamento para este contrato.' };
   }
 
-  // 2. Validação dos Campos Obrigatórios no Cliente
   if (!payload.contrato || !payload.alunoNome || !payload.descricao?.trim()) {
-    return {
-      success: false,
-      status: 'ERRO',
-      mensagem: 'Dados incompletos: contrato, nome do aluno e descrição são obrigatórios para despacho ao CGD.',
-    };
+    return { success: false, status: 'ERRO', mensagem: 'Dados incompletos: contrato, nome e descrição são obrigatórios.' };
   }
 
-  // 3. Verificação de Autorização e Escopo de Unidade (RBAC)
   if (
     currentUser.role === 'professor' &&
     currentUser.unidade &&
@@ -67,116 +51,76 @@ export async function enviarOcorrenciaParaCgd(
     return {
       success: false,
       status: 'ERRO',
-      mensagem: `Acesso negado (RLS): Professor vinculado à unidade ${currentUser.unidade} não pode despachar ocorrências da unidade ${payload.unidade}.`,
+      mensagem: `Acesso negado: professor da unidade ${currentUser.unidade} não pode despachar para ${payload.unidade}.`,
     };
   }
 
   activeSubmissionsLock.add(lockKey);
 
   try {
-    const isMatriz = payload.unidade === 'matriz';
-    const targetBranchCode = isMatriz ? 'MATRIZ_836410' : 'FILIAL_832852';
+    const response = await fetch('/api/cgd/ocorrencias', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        professorId: currentUser.id,
+        professorNome: currentUser.nome,
+      }),
+    });
 
-    // 4. Chamada à API Server-Side Segura (/api/cgd/ocorrencias)
-    let backendSuccess = false;
-    let backendData: any = null;
-    let backendErrorMsg = '';
+    let jsonRes: any = null;
+    try { jsonRes = await response.json(); } catch { jsonRes = null; }
 
-    try {
-      const response = await fetch('/api/cgd/ocorrencias', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...payload,
-          professorId: currentUser.id,
-          professorNome: currentUser.nome,
-        }),
-      });
-
-      if (response.ok) {
-        const jsonRes = await response.json();
-        if (jsonRes.success) {
-          backendSuccess = true;
-          backendData = jsonRes.dados;
-        } else {
-          backendErrorMsg = jsonRes.error || 'Erro reportado pela API server-side.';
-        }
-      } else {
-        backendErrorMsg = `Servidor retornou status HTTP ${response.status}.`;
-      }
-    } catch (netErr: any) {
-      // Caso a rota server-side esteja inacessível em ambiente estático temporário
-      backendErrorMsg = netErr?.message || 'Falha de conexão com o servidor local.';
-    }
-
-    const requestTimestamp = new Date().toISOString();
-    const formattedDataSync = backendData?.dataSincronizacao || new Date().toLocaleString('pt-BR');
-
-    // Identificador provisório de rastreamento auditável no padrão oficial CGD
-    const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-    const protocoloGerado = `CGD-${isMatriz ? 'MATRIZ-836410' : 'FILIAL-832852'}-${randomSuffix}`;
-
-    // 5. Persistência no Supabase (Atualização das tabelas ocorrencias_cgd e ocorrencias)
-    if (supabase) {
-      try {
-        await supabase.from('ocorrencias_cgd').upsert(
-          {
-            contrato: payload.contrato,
-            aluno_nome: payload.alunoNome,
-            status_tratativa: payload.statusTratativa === 'concluido' ? 'CONCLUÍDO' : payload.statusTratativa === 'em_andamento' ? 'EM ANDAMENTO' : 'PENDENTE',
-            anotacao: payload.descricao,
-            reposicao_agendada: payload.tratativaAplicada === 'aulao' || payload.tratativaAplicada === 'atividade_pratica',
-            protocolo_cgd: protocoloGerado,
-            sincronizado_cgd: true,
-            atualizado_em: requestTimestamp,
-          },
-          { onConflict: 'contrato' }
-        );
-
-        await supabase.from('ocorrencias').upsert({
-          contrato: payload.contrato,
-          aluno_nome: payload.alunoNome,
-          curso: payload.curso,
-          turma_nome: payload.turmaNome,
-          professor_id: currentUser.id,
-          professor_nome: currentUser.nome,
-          tipo: payload.tipo,
-          titulo: payload.titulo || `Ocorrência Pedagógica - ${payload.contrato}`,
-          descricao: payload.descricao,
-          tratativa_aplicada: payload.tratativaAplicada,
-          status_tratativa: payload.statusTratativa,
-          sincronizado_cgd: true,
-          data_sincronizacao_cgd: requestTimestamp,
-          protocolo_cgd: protocoloGerado,
-        });
-      } catch (dbErr) {
-        console.warn('Registro local Supabase não pôde ser completado, mas auditoria foi registrada:', dbErr);
-      }
-    }
-
-    if (!backendSuccess && backendErrorMsg) {
-      // Se houve erro explícito no backend
+    if (!response.ok || !jsonRes?.success) {
+      const mensagem = jsonRes?.error || jsonRes?.mensagem || `Servidor retornou HTTP ${response.status}.`;
       return {
         success: false,
-        status: 'ERRO',
-        mensagem: `Aviso do backend: ${backendErrorMsg}. Ocorrência preservada localmente para reenvio.`,
+        status: response.status === 409 ? 'REQUER_REENVIO' : 'ERRO',
+        mensagem: `O CGD não confirmou o despacho: ${mensagem}`,
       };
+    }
+
+    const statusBackend = String(jsonRes.status || '').toUpperCase();
+    const backendConfirmouEnvio = statusBackend === 'ENVIADO' && Boolean(jsonRes.protocolo || jsonRes.dados?.protocolo);
+
+    if (!backendConfirmouEnvio) {
+      return {
+        success: false,
+        status: statusBackend === 'PENDENTE' ? 'PENDENTE' : 'REQUER_REENVIO',
+        mensagem: jsonRes.mensagem || 'Payload aceito pelo backend, mas o CGD não confirmou o despacho real. Nenhum protocolo foi inventado.',
+      };
+    }
+
+    const protocolo = jsonRes.protocolo || jsonRes.dados?.protocolo;
+    const dataSincronizacao = jsonRes.dataSincronizacao || jsonRes.dados?.dataSincronizacao || new Date().toLocaleString('pt-BR');
+
+    if (supabase) {
+      const { error } = await supabase.from('ocorrencias_cgd').upsert({
+        contrato: payload.contrato,
+        aluno_nome: payload.alunoNome,
+        status_tratativa: payload.statusTratativa === 'concluido' ? 'CONCLUÍDO' : payload.statusTratativa === 'em_andamento' ? 'EM ANDAMENTO' : 'PENDENTE',
+        anotacao: payload.descricao,
+        reposicao_agendada: payload.tratativaAplicada === 'aulao' || payload.tratativaAplicada === 'atividade_pratica',
+        protocolo_cgd: protocolo,
+        sincronizado_cgd: true,
+        atualizado_em: new Date().toISOString(),
+      }, { onConflict: 'contrato' });
+
+      if (error) console.warn('Auditoria CGD no Supabase não gravada:', error.message);
     }
 
     return {
       success: true,
       status: 'ENVIADO',
-      protocolo: protocoloGerado,
-      dataSincronizacao: formattedDataSync,
-      mensagem: `Ocorrência processada com sucesso pela camada segura do servidor (${targetBranchCode}).`,
+      protocolo,
+      dataSincronizacao,
+      mensagem: 'O CGD confirmou o despacho da ocorrência.',
     };
   } catch (err: any) {
     return {
       success: false,
       status: 'ERRO',
-      mensagem: err?.message || 'Falha na comunicação com o servidor. A ocorrência foi mantida no CFIS para reenvio.',
+      mensagem: err?.message || 'Falha de comunicação com o backend CGD.',
     };
   } finally {
     activeSubmissionsLock.delete(lockKey);
