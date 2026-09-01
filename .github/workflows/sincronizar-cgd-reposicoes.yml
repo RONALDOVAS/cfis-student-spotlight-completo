@@ -1,0 +1,40 @@
+name: Sincronizar reposições CGD
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-cgd.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Sincronizar CGD -> Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CGD_LOGIN_URL: ${{ secrets.CGD_LOGIN_URL }}
+          CGD_USER_MATRIZ: ${{ secrets.CGD_USER_MATRIZ }}
+          CGD_PASS_MATRIZ: ${{ secrets.CGD_PASS_MATRIZ }}
+          CGD_MATRIZ_URL: ${{ secrets.CGD_MATRIZ_URL }}
+          CGD_REPOSICOES_URL_MATRIZ: ${{ secrets.CGD_REPOSICOES_URL_MATRIZ }}
+          CGD_USER_FILIAL: ${{ secrets.CGD_USER_FILIAL }}
+          CGD_PASS_FILIAL: ${{ secrets.CGD_PASS_FILIAL }}
+          CGD_FILIAL_URL: ${{ secrets.CGD_FILIAL_URL }}
+          CGD_REPOSICOES_URL_FILIAL: ${{ secrets.CGD_REPOSICOES_URL_FILIAL }}
+        run: python scripts/sync_cgd_reposicoes.py
