@@ -46,4 +46,4 @@ jobs:
           CGD_BASE_URL: https://app.cgd.com.br
           CGD_USERNAME: ${{ secrets.CGD_USERNAME }}
           CGD_PASSWORD: ${{ secrets.CGD_PASSWORD }}
-        run: python scripts/sync_cgd_reposicoes.py
+        run: python scripts/run_sync_cgd.py
