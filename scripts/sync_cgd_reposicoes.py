@@ -9,20 +9,30 @@ from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-CGD_LOGIN_URL = os.getenv("CGD_LOGIN_URL", "https://app.cgd.com.br")
+# O CGD usa a tela de autenticação /login. Mantemos override por ambiente.
+CGD_LOGIN_URL = os.getenv("CGD_LOGIN_URL", "https://app.cgd.com.br/login")
+
+
+def env_first(*names):
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
+
 
 UNIDADES = [
     {
         "nome": "MATRIZ",
-        "usuario": os.getenv("CGD_USER_MATRIZ"),
-        "senha": os.getenv("CGD_PASS_MATRIZ"),
-        "url": os.getenv("CGD_REPOSICOES_URL_MATRIZ") or os.getenv("CGD_MATRIZ_URL"),
+        "usuario": env_first("CGD_USER_MATRIZ", "CGD_MATRIZ_USERNAME", "CGD_USERNAME"),
+        "senha": env_first("CGD_PASS_MATRIZ", "CGD_MATRIZ_PASSWORD", "CGD_PASSWORD"),
+        "url": env_first("CGD_REPOSICOES_URL_MATRIZ", "CGD_MATRIZ_URL", "CGD_BASE_URL"),
     },
     {
         "nome": "FILIAL",
-        "usuario": os.getenv("CGD_USER_FILIAL"),
-        "senha": os.getenv("CGD_PASS_FILIAL"),
-        "url": os.getenv("CGD_REPOSICOES_URL_FILIAL") or os.getenv("CGD_FILIAL_URL"),
+        "usuario": env_first("CGD_USER_FILIAL", "CGD_FILIAL_USERNAME", "CGD_USERNAME"),
+        "senha": env_first("CGD_PASS_FILIAL", "CGD_FILIAL_PASSWORD", "CGD_PASSWORD"),
+        "url": env_first("CGD_REPOSICOES_URL_FILIAL", "CGD_FILIAL_URL", "CGD_BASE_URL"),
     },
 ]
 
@@ -38,7 +48,7 @@ def encontrar_campo(page, candidatos):
     for seletor in candidatos:
         try:
             loc = page.locator(seletor).first
-            if loc.is_visible(timeout=1500):
+            if loc.is_visible(timeout=2000):
                 return loc
         except Exception:
             pass
@@ -49,30 +59,37 @@ def fazer_login(page, usuario, senha_valor):
     page.goto(CGD_LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(2500)
 
+    # A página pública do CGD apresenta explicitamente E-mail, Senha e Entrar.
     login = encontrar_campo(
         page,
         [
             'input[type="email"]',
+            'input[name="email"]',
+            'input[autocomplete="email"]',
+            'input[placeholder*="e-mail" i]',
+            'input[placeholder*="email" i]',
             'input[name*="user" i]',
             'input[name*="login" i]',
             'input[id*="user" i]',
             'input[id*="login" i]',
-            'input[placeholder*="usu" i]',
-            'input[placeholder*="login" i]',
         ],
     )
     campo_senha = encontrar_campo(
         page,
         [
             'input[type="password"]',
-            'input[name*="senha" i]',
-            'input[name*="pass" i]',
-            'input[id*="senha" i]',
-            'input[id*="pass" i]',
+            'input[name="password"]',
+            'input[name="senha"]',
+            'input[autocomplete="current-password"]',
+            'input[placeholder*="senha" i]',
         ],
     )
+
     if not login or not campo_senha:
-        raise RuntimeError("Campos de login do CGD não encontrados.")
+        raise RuntimeError(
+            f"Campos de login do CGD não encontrados em {page.url}. "
+            f"inputs={page.locator('input').count()} buttons={page.locator('button').count()}"
+        )
 
     login.fill(usuario)
     campo_senha.fill(senha_valor)
@@ -88,25 +105,27 @@ def fazer_login(page, usuario, senha_valor):
         ],
     )
     if not botao:
-        raise RuntimeError("Botão de login do CGD não encontrado.")
+        raise RuntimeError(f"Botão de login do CGD não encontrado em {page.url}.")
 
     botao.click()
     try:
         page.wait_for_load_state("networkidle", timeout=60000)
     except Exception:
         pass
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(4000)
+
+    # Se o CGD rejeitar a autenticação, falha explicitamente em vez de tentar
+    # extrair dados da própria tela de login.
+    if page.locator('input[type="password"]').count() > 0 and page.url.rstrip("/").endswith("/login"):
+        body = texto(page.locator("body")).lower()
+        if any(k in body for k in ("senha incorreta", "usuário ou senha", "usuario ou senha", "acesso negado")):
+            raise RuntimeError("Autenticação no CGD rejeitada.")
 
 
 def descobrir_pagina_reposicoes(page):
-    """Localiza a tela de reposições usando texto, href e rotas já existentes no CGD."""
     palavras = (
-        "reposição",
-        "reposicao",
-        "agendamento",
-        "agendamentos",
-        "recuperação",
-        "recuperacao",
+        "reposição", "reposicao", "agendamento", "agendamentos",
+        "recuperação", "recuperacao",
     )
 
     elementos = page.locator("a,button,[role='menuitem'],[role='button']")
@@ -120,10 +139,8 @@ def descobrir_pagina_reposicoes(page):
             alvo = f"{txt} {href.lower()}"
             if not any(palavra in alvo for palavra in palavras):
                 continue
-
             if href and not href.startswith("#") and not href.lower().startswith("javascript:"):
                 return urljoin(page.url, href)
-
             try:
                 el.click()
                 page.wait_for_timeout(2500)
@@ -133,24 +150,8 @@ def descobrir_pagina_reposicoes(page):
         except Exception:
             pass
 
-    # Fallback: alguns menus não expõem o href até a interação.
-    rotas = (
-        "/reposicoes",
-        "/reposicao",
-        "/agendamentos",
-        "/agendamento",
-        "/contratos/reposicoes",
-        "/contratos/agendamentos",
-    )
-    for rota in rotas:
-        try:
-            candidato = urljoin(CGD_LOGIN_URL.rstrip("/") + "/", rota.lstrip("/"))
-            response = page.request.get(candidato, timeout=10000)
-            if response.ok:
-                return candidato
-        except Exception:
-            pass
-
+    # Não inventa uma rota como se fosse confirmada. Se não encontrou o menu,
+    # retorna a página autenticada e o extrator trabalha com ela.
     return page.url
 
 
@@ -163,11 +164,9 @@ def normalizar_data(valor):
                 return datetime.strptime(bruto, fmt).strftime("%d/%m/%Y")
             except ValueError:
                 pass
-
     m = re.search(r"(\d{4}-\d{2}-\d{2})", valor)
     if m:
         return datetime.strptime(m.group(1), "%Y-%m-%d").strftime("%d/%m/%Y")
-
     return valor.strip()
 
 
@@ -178,17 +177,13 @@ def normalizar_horario(valor, padrao="16:00"):
 
 def pagina_tem_dados(page):
     try:
-        return page.locator(
-            "table tbody tr, table tr, [role='row'], .table-responsive tr, .MuiDataGrid-row"
-        ).count() > 0
+        return page.locator("table tbody tr, table tr, [role='row'], .table-responsive tr, .MuiDataGrid-row").count() > 0
     except Exception:
         return False
 
 
 def extrair_linhas(page):
-    """Extrai linhas tanto de tabelas HTML quanto de grids comuns, sem depender de tbody."""
     linhas = []
-
     tabelas = page.locator("table")
     for ti in range(tabelas.count()):
         tabela = tabelas.nth(ti)
@@ -196,7 +191,6 @@ def extrair_linhas(page):
         rows = tabela.locator("tbody tr")
         if rows.count() == 0:
             rows = tabela.locator("tr")
-
         for ri in range(rows.count()):
             row = rows.nth(ri)
             celulas = [texto(row.locator("th,td").nth(i)) for i in range(row.locator("th,td").count())]
@@ -204,7 +198,6 @@ def extrair_linhas(page):
             if celulas:
                 linhas.append((celulas, cabecalhos))
 
-    # Fallback para grids que não usam <table>.
     if not linhas:
         rows = page.locator("[role='row'], .MuiDataGrid-row, .ant-table-row")
         for ri in range(rows.count()):
@@ -213,22 +206,14 @@ def extrair_linhas(page):
             celulas = [c for c in celulas if c]
             if celulas:
                 linhas.append((celulas, []))
-
     return linhas
 
 
 def extrair_reposicoes(page, unidade):
     registros = []
-    linhas = extrair_linhas(page)
-
-    for celulas, cabecalhos in linhas:
+    for celulas, cabecalhos in extrair_linhas(page):
         bruto = " | ".join(celulas)
-        if len(celulas) < 2:
-            continue
-
-        # Ignora cabeçalhos e linhas sem data. A data é o melhor marcador
-        # porque continua presente mesmo quando o CGD muda a ordem das colunas.
-        if not re.search(r"\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}", bruto):
+        if len(celulas) < 2 or not re.search(r"\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}", bruto):
             continue
 
         mapa = {}
@@ -252,7 +237,6 @@ def extrair_reposicoes(page, unidade):
         disciplina = por_nome(("disciplina", "módulo", "modulo", "curso"))
         status = por_nome(("status", "situação", "situacao")) or "agendada"
 
-        # Fallback posicional/semântico para páginas sem cabeçalhos acessíveis.
         if not contrato:
             for c in celulas:
                 limpo = re.sub(r"[.\-\s]", "", c)
@@ -283,82 +267,62 @@ def extrair_reposicoes(page, unidade):
 
         chave = f"{unidade}|{contrato}|{nome}|{data}|{inicio}|{disciplina}".lower()
         rid = "cgd_rep_" + hashlib.sha256(chave.encode("utf-8")).hexdigest()[:32]
-
-        registros.append(
-            {
-                "id": rid,
-                "aluno_id": None,
-                "aluno_nome": nome,
-                "contrato": contrato or None,
-                "unidade": unidade,
-                "data": data,
-                "horario_inicio": inicio,
-                "horario_fim": fim,
-                "duracao_horas": 2,
-                "disciplina": disciplina,
-                "professor": "Ronaldo Vasconcelos",
-                "status": status.lower(),
-                "tipo": "laboratorio",
-                "observacao": f"Sincronizado do CGD em {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
-                "updated_at": datetime.now().isoformat(),
-            }
-        )
-
+        registros.append({
+            "id": rid,
+            "aluno_id": None,
+            "aluno_nome": nome,
+            "contrato": contrato or None,
+            "unidade": unidade,
+            "data": data,
+            "horario_inicio": inicio,
+            "horario_fim": fim,
+            "duracao_horas": 2,
+            "disciplina": disciplina,
+            "professor": "Ronaldo Vasconcelos",
+            "status": status.lower(),
+            "tipo": "laboratorio",
+            "observacao": f"Sincronizado do CGD em {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
+            "updated_at": datetime.now().isoformat(),
+        })
     return registros
 
 
 def main():
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     total = 0
-
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-
         for unidade in UNIDADES:
             if not unidade["usuario"] or not unidade["senha"]:
                 print(f"[{unidade['nome']}] credenciais ausentes; ignorada")
                 continue
-
             context = browser.new_context(viewport={"width": 1440, "height": 1000})
             page = context.new_page()
-
             try:
                 fazer_login(page, unidade["usuario"], unidade["senha"])
                 alvo = unidade["url"] or descobrir_pagina_reposicoes(page)
-                if not alvo:
-                    raise RuntimeError("Não foi possível determinar a página de reposições do CGD.")
-
-                page.goto(alvo, wait_until="domcontentloaded", timeout=60000)
+                if alvo and alvo != page.url:
+                    page.goto(alvo, wait_until="domcontentloaded", timeout=60000)
                 try:
                     page.wait_for_load_state("networkidle", timeout=30000)
                 except Exception:
                     pass
-                page.wait_for_timeout(3000)
-
-                # Algumas versões do CGD carregam a grade depois da navegação.
-                for _ in range(3):
+                page.wait_for_timeout(4000)
+                for _ in range(4):
                     if pagina_tem_dados(page):
                         break
                     page.wait_for_timeout(2500)
 
                 reposicoes = extrair_reposicoes(page, unidade["nome"])
                 if reposicoes:
-                    supabase.table("reposicoes_agendadas").upsert(
-                        reposicoes, on_conflict="id"
-                    ).execute()
-
+                    supabase.table("reposicoes_agendadas").upsert(reposicoes, on_conflict="id").execute()
                 total += len(reposicoes)
-                print(
-                    f"[{unidade['nome']}] {len(reposicoes)} reposições sincronizadas | URL: {page.url}"
-                )
-
+                print(f"[{unidade['nome']}] {len(reposicoes)} reposições sincronizadas | URL: {page.url}")
             except Exception as exc:
                 print(f"[{unidade['nome']}] ERRO: {exc}")
             finally:
                 context.close()
-
         browser.close()
-
     print(f"TOTAL SINCRONIZADO: {total}")
 
 
