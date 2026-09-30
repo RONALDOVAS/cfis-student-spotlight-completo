@@ -474,15 +474,15 @@ export default function App() {
                 disciplina_atual: alunoMon.disciplinaAtual || 'Módulo Geral',
                 disciplinas_concluidas: concluidas,
                 disciplinas_pendentes: pendentes,
-                dias_aula: 'Flexível / CGD',
-                horario_aula: 'Horário de Laboratório',
-                carga_horaria: alunoMon.totalDisciplinasGrade * 10,
-                horas_cumpridas: alunoMon.disciplinasConcluidas * 10,
-                dias_inatividade: alunoMon.diasEmCurso || 0,
+                dias_aula: alunoMon.turmaNome || '',
+                horario_aula: '',
+                carga_horaria: alunoMon.disciplinas.reduce((total, d) => total + (d.cargaHoraria || 0), 0),
+                horas_cumpridas: alunoMon.disciplinas.reduce((total, d) => total + (d.horasCursadas || 0), 0),
+                dias_inatividade: alunoMon.diasSemAcesso || 0,
                 faltas_acumuladas: alunoMon.faltasTotais || 0,
-                ultimo_acesso: alunoMon.ultimoAcesso || 'Hoje',
-                reposicoes_realizadas: (alunoMon.reposicoesRealizadas || 0) + realizadas.length,
-                reposicoes_pendentes: Math.max(0, (alunoMon.faltasTotais || 0) - ((alunoMon.reposicoesRealizadas || 0) + realizadas.length)),
+                ultimo_acesso: alunoMon.ultimoAcesso || '',
+                reposicoes_realizadas: alunoMon.reposicoesRealizadas || 0,
+                reposicoes_pendentes: alunoMon.reposicoesPendentes || 0,
                 reposicoes_agendadas: agendadas.length,
                 reposicao_agendada: ocSalva ? ocSalva.reposicao_agendada : (agendadas.length > 0),
                 proxima_reposicao: agendadas[0] || (alunoMon.proximaReposicao ? {
@@ -518,7 +518,11 @@ export default function App() {
                 criticidade: criticidadeNome,
                 status_tratativa: stTrat as StatusTratativa,
                 tratativa: ocSalva ? ocSalva.anotacao : (alunoMon.observacaoTratativa || ''),
-                acao_recomendada: alunoMon.faltasTotais > 2 ? 'Realizar contato telefônico imediato' : 'Acompanhamento pedagógico padrão',
+                acao_recomendada:
+                  alunoMon.tratativaSugerida === 'aulao' ? 'Aulão' :
+                  alunoMon.tratativaSugerida === 'atividade_pratica' ? 'Atividade prática' :
+                  alunoMon.tratativaSugerida === 'acompanhamento' ? 'Acompanhamento' :
+                  'Normal',
                 link_cgd: alunoMon.cgdUrl,
               };
             });
