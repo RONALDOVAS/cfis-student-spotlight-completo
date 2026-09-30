@@ -38,6 +38,7 @@ type NormalizedAluno = {
   status_tratativa: 'pendente' | 'em_andamento' | 'concluido' | null;
   status_matricula: 'ativo' | 'bloqueado_faltas' | 'trancado' | 'concluido' | null;
   bloqueado_automaticamente: boolean;
+  bloqueio_manual_override: boolean;
   motivo_bloqueio: string | null;
   total_disciplinas_grade: number | null;
   disciplinas_concluidas: number;
@@ -248,7 +249,12 @@ function normalizeAluno(raw: RawRecord, index: number): {
     raw.FALTAS_MES_ATUAL,
   );
 
-  const bloqueado = faltasMes >= 3;
+  const reposicoesRealizadas = Math.max(0, numberValue(raw.reposicoes_realizadas, raw.reposicoesRealizadas));
+  const faltasMesAnterior = Math.max(0, faltasTotais - faltasMes);
+  const reposicoesQueAbatemHistorico = Math.min(reposicoesRealizadas, faltasMesAnterior);
+  const faltasMesEfetivas = Math.max(0, faltasMes - Math.max(0, reposicoesRealizadas - reposicoesQueAbatemHistorico));
+  const bloqueado = faltasMesEfetivas >= 3;
+  const bloqueioManualOverride = Boolean(raw.bloqueio_manual_override);
   const statusMatricula = normalizeStatusAluno(raw.status_matricula);
 
   const alunoId = uuidFromKey(`${unidade}:${contrato}`);
@@ -296,15 +302,15 @@ function normalizeAluno(raw: RawRecord, index: number): {
     faltas_totais: Math.max(0, faltasTotais),
     faltas_mes_atual: Math.max(0, faltasMes),
     mes_referencia_faltas: mesReferencia,
-    reposicoes_realizadas: Math.max(0, numberValue(raw.reposicoes_realizadas, raw.reposicoesRealizadas)),
+    reposicoes_realizadas: reposicoesRealizadas,
     dias_em_curso: Math.max(0, numberValue(raw.dias_em_curso, raw.dias_curso, raw.dias)),
     criticidade: normalizeCriticidade(raw.criticidade),
     tratativa_sugerida: normalizeTratativa(raw.tratativa, raw.tratativa_sugerida),
     status_tratativa: normalizeStatusTratativa(raw.status_tratativa),
     status_matricula: statusMatricula,
-    bloqueado_automaticamente: bloqueado || Boolean(raw.bloqueado_automaticamente),
-    motivo_bloqueio: bloqueado
-      ? `Bloqueio automático: ${faltasMes} faltas no mês ${textValue(raw.mes_referencia_faltas, raw.mes_referencia, 'vigente')}.`
+    bloqueado_automaticamente: !bloqueioManualOverride && bloqueado,\n    bloqueio_manual_override: bloqueioManualOverride,
+    motivo_bloqueio: !bloqueioManualOverride && bloqueado
+      ? `Bloqueio automático: ${faltasMesEfetivas} faltas efetivas no mês ${textValue(raw.mes_referencia_faltas, raw.mes_referencia, 'vigente')}.`
       : nullableText(raw.motivo_bloqueio),
     total_disciplinas_grade: Math.max(0, totalGrade),
     disciplinas_concluidas: Math.max(0, concluidas),
@@ -444,6 +450,8 @@ async function main() {
   for (let i = 0; i < alunos.length; i += BATCH_SIZE) {
     const batch = alunos.slice(i, i + BATCH_SIZE).map((aluno) => {
       const payload = { ...aluno } as Record<string, unknown>;
+      // created_at pertence ao registro original; nunca deve ser resetado em um sync recorrente.
+      delete payload.created_at;
       for (const key of ['criticidade', 'tratativa_sugerida', 'status_tratativa', 'status_matricula']) {
         if (payload[key] === null) delete payload[key];
       }
