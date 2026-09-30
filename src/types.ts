@@ -52,8 +52,6 @@ export interface DisciplinaAluno {
   nota?: number;
   frequenciaPercent?: number;
   dataConclusao?: string;
-
-  // Controle de ritmo da disciplina
   horasCursadas?: number;
   horasEsperadas?: number;
   horasExcedentes?: number;
@@ -69,10 +67,10 @@ export interface ReposicaoAgendadaItem {
   aluno_nome: string;
   contrato?: string;
   unidade?: string;
-  data: string; // Ex: '03/09/2026' ou '2026-09-03'
-  horario_inicio: string; // '16:00'
-  horario_fim: string; // '18:00'
-  duracao_horas: number; // 2
+  data: string;
+  horario_inicio: string;
+  horario_fim: string;
+  duracao_horas: number;
   disciplina?: string;
   professor?: string;
   status: 'agendada' | 'realizada' | 'cancelada';
@@ -130,35 +128,30 @@ export interface AlunoMonitorado {
   ultimoAcesso: string;
 
   diasSemAcesso?: number;
-
   faltasBrutasTotais?: number;
   faltasBrutasMes?: number;
-
   faltasAcumuladas?: number;
+  faltasMesAtual: number;
+  faltasMesAtualEfetivas?: number;
   reposicoesRealizadas: number;
   reposicoesPendentes?: number;
   percentualReposicao?: number;
+  reposicoesAgendadas: number;
 
   dataTerminoContrato?: string;
   diasContratoTotal?: number;
   diasContratoDecorridos?: number;
   diasContratoRestantes?: number;
-
   riscoPrazoContrato?: 'baixo' | 'moderado' | 'alto' | 'critico';
   detalheRiscoPrazoContrato?: string;
 
-  reposicoesAgendadas: number;
-
   presencasRegulares?: number;
   presencasReposicao?: number;
-
   faltasTotais: number;
-  faltasMesAtual: number;
   mesReferenciaFaltas: string;
 
   diasEmCurso: number;
   diasTotalPrevisto?: number;
-
   status?: string;
 
   criticidade: NivelCriticidade;
@@ -167,12 +160,11 @@ export interface AlunoMonitorado {
   observacaoTratativa?: string;
 
   statusMatricula: StatusAluno;
-
   bloqueadoAutomaticamente: boolean;
+  bloqueioManualOverride?: boolean;
   motivoBloqueio?: string;
 
   disciplinas: DisciplinaAluno[];
-
   historicoReposicoes?: HistoricoReposicao[];
   proximaReposicao?: HistoricoReposicao;
 
@@ -181,15 +173,12 @@ export interface AlunoMonitorado {
 
   anomaliaRitmo?: TipoAnomaliaRitmo;
   detalheAnomaliaRitmo?: string;
-
   tempoMedioPorAulaMinutos?: number;
   percentualAvancoDisciplina?: number;
-
   horasCursadasDisciplinaAtual?: number;
   horasEsperadasDisciplinaAtual?: number;
   horasExcedentesDisciplinaAtual?: number;
   percentualCargaUtilizadaDisciplinaAtual?: number;
-
   primeiraOcorrenciaAutomatica?: boolean;
 
   unidade: 'filial' | 'matriz';
@@ -213,10 +202,7 @@ export interface DashboardMetricsCGD {
   ativosSemParcelas: number;
   semTurmasESemCursos: number;
   apenasEmTurmasArquivadas: number;
-  evolucaoMatriculas: {
-    mes: string;
-    quantidade: number;
-  }[];
+  evolucaoMatriculas: { mes: string; quantidade: number }[];
   usuarioLogadoCGD: string;
   urlPainel: string;
   ultimoUpdate: string;
@@ -246,10 +232,7 @@ export interface OcorrenciaCGD {
   sincronizadoCGD: boolean;
   dataSincronizacaoCGD?: string;
   protocoloCGD?: string;
-  origemOcorrencia?:
-    | 'sistema_automatico'
-    | 'instrutor'
-    | 'coordenacao';
+  origemOcorrencia?: 'sistema_automatico' | 'instrutor' | 'coordenacao';
   sequencialOcorrencia?: number;
 }
 
@@ -288,11 +271,7 @@ export interface RotinaScrapingCGD {
   frequenciaAgendada: string;
   proximaExecucao: string;
   ultimaExecucao: string;
-  status:
-    | 'ativo'
-    | 'executando'
-    | 'pausado'
-    | 'erro';
+  status: 'ativo' | 'executando' | 'pausado' | 'erro';
   totalRegistrosExtraidos: number;
   unidadeAlvo: 'filial' | 'matriz';
 }
@@ -323,21 +302,13 @@ export interface CredencialCGD {
   totalAlunosDetectados: number;
   urlSistema: string;
   baseUrlContrato?: string;
-  laboratoriosDisponiveis?: {
-    id: string;
-    nome: string;
-    salas: string;
-  }[];
+  laboratoriosDisponiveis?: { id: string; nome: string; salas: string }[];
   isAtiva: boolean;
   cookiesSessao?: string;
   ambienteTipo?: 'producao' | 'homologacao';
   modulosHabilitados?: string[];
   ultimoErro?: string;
 }
-
-// ============================================================================
-// SUPABASE
-// ============================================================================
 
 export interface ProfileRow {
   id: string;
@@ -400,6 +371,7 @@ export interface AlunoRow {
   status_tratativa: StatusTratativa;
   status_matricula: StatusAluno;
   bloqueado_automaticamente: boolean;
+  bloqueio_manual_override?: boolean;
   motivo_bloqueio?: string | null;
   total_disciplinas_grade: number;
   disciplinas_concluidas: number;
@@ -418,7 +390,6 @@ export interface AlunoDisciplinaRow {
   frequencia_percent?: number | null;
   data_conclusao?: string | null;
   ordem: number;
-
   horas_cursadas?: number | null;
   horas_excedentes?: number | null;
   percentual_carga_utilizada?: number | null;
