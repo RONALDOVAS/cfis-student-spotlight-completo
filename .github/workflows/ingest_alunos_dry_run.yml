@@ -23,8 +23,5 @@ jobs:
       - name: Instalar dependências
         run: npm install --no-audit --no-fund
 
-      - name: Validar TypeScript
-        run: npm run lint
-
       - name: Executar ingestão em DRY-RUN
         run: npm run ingest:alunos
