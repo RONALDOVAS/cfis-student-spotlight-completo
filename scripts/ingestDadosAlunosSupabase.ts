@@ -308,7 +308,8 @@ function normalizeAluno(raw: RawRecord, index: number): {
     tratativa_sugerida: normalizeTratativa(raw.tratativa, raw.tratativa_sugerida),
     status_tratativa: normalizeStatusTratativa(raw.status_tratativa),
     status_matricula: statusMatricula,
-    bloqueado_automaticamente: !bloqueioManualOverride && bloqueado,\n    bloqueio_manual_override: bloqueioManualOverride,
+    bloqueado_automaticamente: !bloqueioManualOverride && bloqueado,
+    bloqueio_manual_override: bloqueioManualOverride,
     motivo_bloqueio: !bloqueioManualOverride && bloqueado
       ? `Bloqueio automático: ${faltasMesEfetivas} faltas efetivas no mês ${textValue(raw.mes_referencia_faltas, raw.mes_referencia, 'vigente')}.`
       : nullableText(raw.motivo_bloqueio),
