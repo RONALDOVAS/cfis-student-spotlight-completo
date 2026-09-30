@@ -282,7 +282,13 @@ export function mapAlunoRowToAlunoMonitorado(
       ? Math.max(0, aluno.reposicoes_realizadas)
       : 0;
 
-  const reposicoesPendentes = Math.max(0, faltasAcumuladas - reposicoesRealizadas);
+  // Compensação oficial: cada reposição realizada abate a falta mais antiga.
+  const faltasMesAnterior = Math.max(0, faltasAcumuladas - faltasMesAtual);
+  const reposicoesQueAbatemHistorico = Math.min(reposicoesRealizadas, faltasMesAnterior);
+  const reposicoesRestantesParaMesAtual = Math.max(0, reposicoesRealizadas - reposicoesQueAbatemHistorico);
+  const faltasMesAtualEfetivas = Math.max(0, faltasMesAtual - reposicoesRestantesParaMesAtual);
+  const faltasAcumuladasEfetivas = Math.max(0, faltasAcumuladas - reposicoesRealizadas);
+  const reposicoesPendentes = faltasAcumuladasEfetivas;
   const percentualReposicao =
     faltasAcumuladas > 0
       ? Math.min(100, Math.max(0, (reposicoesRealizadas / faltasAcumuladas) * 100))
@@ -306,18 +312,25 @@ export function mapAlunoRowToAlunoMonitorado(
     temDisciplinaEmAndamento: Boolean(disciplinaEmAndamento),
   });
 
-  // Regra de Bloqueio Automático: faltas_mes_atual >= 3
-  const deveBloquear = faltasMesAtual >= 3;
-  const bloqueadoAutomaticamente = Boolean(aluno.bloqueado_automaticamente || deveBloquear);
+  // Regra oficial: 3+ faltas efetivas no mês vigente bloqueiam automaticamente.
+  // A reposição compensa primeiro faltas anteriores e depois o mês vigente.
+  const deveBloquearAutomaticamente = faltasMesAtualEfetivas >= 3;
+  const bloqueioManualOverride = Boolean(aluno.bloqueio_manual_override);
+  const bloqueioAutomaticoAtual = !bloqueioManualOverride && deveBloquearAutomaticamente;
+  const bloqueadoAutomaticamente = bloqueioAutomaticoAtual;
   let statusMatricula = aluno.status_matricula;
   let motivoBloqueio =
     aluno.motivo_bloqueio !== null && aluno.motivo_bloqueio !== undefined
       ? aluno.motivo_bloqueio
       : undefined;
 
-  if (deveBloquear) {
+  if (bloqueioAutomaticoAtual) {
     statusMatricula = 'bloqueado_faltas';
-    motivoBloqueio = `Bloqueio automático: ${faltasMesAtual} faltas no mês ${aluno.mes_referencia_faltas || 'vigente'}. Limite de bloqueio: 3 faltas. Faltas acumuladas: ${faltasAcumuladas}. Reposições pendentes: ${reposicoesPendentes}.`;
+    motivoBloqueio = `Bloqueio automático: ${faltasMesAtualEfetivas} faltas efetivas no mês ${aluno.mes_referencia_faltas || 'vigente'}. Limite: 3. Faltas acumuladas efetivas: ${faltasAcumuladasEfetivas}. Reposições realizadas: ${reposicoesRealizadas}.`;
+  } else if (!bloqueioManualOverride && aluno.bloqueado_automaticamente && !deveBloquearAutomaticamente) {
+    // Desbloqueio automático após compensação suficiente.
+    statusMatricula = statusMatricula === 'bloqueado_faltas' ? 'ativo' : statusMatricula;
+    motivoBloqueio = undefined;
   }
 
   return {
@@ -369,6 +382,7 @@ export function mapAlunoRowToAlunoMonitorado(
     faltasTotais: faltasAcumuladas,
     faltasAcumuladas,
     faltasMesAtual,
+    faltasMesAtualEfetivas,
     mesReferenciaFaltas: aluno.mes_referencia_faltas,
 
     reposicoesRealizadas,
@@ -420,6 +434,7 @@ export function mapAlunoRowToAlunoMonitorado(
 
     statusMatricula,
     bloqueadoAutomaticamente,
+    bloqueioManualOverride,
     motivoBloqueio,
 
     disciplinas: mappedDisciplinas,
@@ -651,6 +666,10 @@ export function mapAlunoMonitoradoToAlunoUpdate(
   if (aluno.bloqueadoAutomaticamente !== undefined)
     updateData.bloqueado_automaticamente =
       aluno.bloqueadoAutomaticamente;
+
+  if (aluno.bloqueioManualOverride !== undefined)
+    updateData.bloqueio_manual_override =
+      aluno.bloqueioManualOverride;
 
   if (aluno.motivoBloqueio !== undefined)
     updateData.motivo_bloqueio =
