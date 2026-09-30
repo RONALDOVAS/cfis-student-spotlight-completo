@@ -87,6 +87,7 @@ CREATE TABLE public.alunos (
   -- STATUS
   status_matricula status_aluno_enum NOT NULL DEFAULT 'ativo',
   bloqueado_automaticamente BOOLEAN NOT NULL DEFAULT FALSE,
+  bloqueio_manual_override BOOLEAN NOT NULL DEFAULT FALSE,
   motivo_bloqueio TEXT,
 
   -- GRADE
@@ -361,68 +362,53 @@ EXECUTE FUNCTION public.calcular_ritmo_disciplina();
 
 CREATE OR REPLACE FUNCTION public.check_aluno_faltas_trigger()
 RETURNS TRIGGER AS $$
+DECLARE
+  faltas_mes_anterior INTEGER;
+  reposicoes_historicas INTEGER;
+  reposicoes_para_mes INTEGER;
+  faltas_mes_efetivas INTEGER;
+  faltas_acumuladas_efetivas INTEGER;
 BEGIN
+  -- Reposição compensa sempre a falta mais antiga.
+  faltas_mes_anterior := GREATEST(0, COALESCE(NEW.faltas_totais, 0) - COALESCE(NEW.faltas_mes_atual, 0));
+  reposicoes_historicas := LEAST(COALESCE(NEW.reposicoes_realizadas, 0), faltas_mes_anterior);
+  reposicoes_para_mes := GREATEST(0, COALESCE(NEW.reposicoes_realizadas, 0) - reposicoes_historicas);
+  faltas_mes_efetivas := GREATEST(0, COALESCE(NEW.faltas_mes_atual, 0) - reposicoes_para_mes);
+  faltas_acumuladas_efetivas := GREATEST(0, COALESCE(NEW.faltas_totais, 0) - COALESCE(NEW.reposicoes_realizadas, 0));
 
-  -- ============================================================================
-  -- BLOQUEIO COM 3 FALTAS NO MÊS ATUAL
-  -- ============================================================================
-  IF NEW.faltas_mes_atual >= 3 THEN
+  -- Bloqueio/desbloqueio automático é independente da criticidade.
+  IF COALESCE(NEW.bloqueio_manual_override, FALSE) THEN
+    -- Ação manual prevalece sobre a automação.
+    RETURN NEW;
+  END IF;
 
+  IF faltas_mes_efetivas >= 3 THEN
     NEW.status_matricula := 'bloqueado_faltas';
-
     NEW.bloqueado_automaticamente := TRUE;
-
-    NEW.motivo_bloqueio :=
-      CONCAT(
-        'Bloqueio automático: ',
-        NEW.faltas_mes_atual,
-        ' faltas no mês ',
-        NEW.mes_referencia_faltas,
-        '. Limite de bloqueio: 3 faltas. Faltas acumuladas: ',
-        NEW.faltas_totais,
-        '. Reposições pendentes: ',
-        GREATEST(0, NEW.faltas_totais - COALESCE(NEW.reposicoes_realizadas, 0)),
-        '.'
-      );
-
-  END IF;
-
-  -- ============================================================================
-  -- CRITICIDADE
-  --
-  -- A criticidade NÃO depende somente das faltas.
-  -- O tempo do aluno na disciplina também será considerado.
-  -- ============================================================================
-
-  IF NEW.faltas_mes_atual >= 3 THEN
-
-    NEW.criticidade := 'critico';
-    NEW.tratativa_sugerida := 'aulao';
-
-  ELSIF NEW.dias_em_curso >= 90 THEN
-
-    NEW.criticidade := 'critico';
-    NEW.tratativa_sugerida := 'aulao';
-
-  ELSIF NEW.dias_em_curso >= 60 THEN
-
-    NEW.criticidade := 'moderado';
-    NEW.tratativa_sugerida := 'atividade_pratica';
-
-  ELSIF NEW.dias_em_curso >= 30 THEN
-
-    NEW.criticidade := 'atencao';
-    NEW.tratativa_sugerida := 'acompanhamento';
-
+    NEW.motivo_bloqueio := CONCAT(
+      'Bloqueio automático: ',
+      faltas_mes_efetivas,
+      ' faltas efetivas no mês ',
+      NEW.mes_referencia_faltas,
+      '. Limite: 3. Faltas acumuladas efetivas: ',
+      faltas_acumuladas_efetivas,
+      '. Reposições realizadas: ',
+      COALESCE(NEW.reposicoes_realizadas, 0),
+      '.'
+    );
   ELSE
-
-    NEW.criticidade := 'normal';
-    NEW.tratativa_sugerida := 'normal';
-
+    -- Reposição suficiente remove somente o bloqueio automático.
+    IF COALESCE(NEW.bloqueado_automaticamente, FALSE)
+       AND NEW.status_matricula = 'bloqueado_faltas' THEN
+      NEW.status_matricula := 'ativo';
+      NEW.bloqueado_automaticamente := FALSE;
+      NEW.motivo_bloqueio := NULL;
+    END IF;
   END IF;
 
+  -- Criticidade não é derivada de faltas nem de 30/60/90 dias.
+  -- Ela permanece como fonte/decisão pedagógica independente.
   RETURN NEW;
-
 END;
 $$ LANGUAGE plpgsql;
 
