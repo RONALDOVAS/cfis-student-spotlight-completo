@@ -403,7 +403,7 @@ export function mapAlunoRowToAlunoMonitorado(
       disciplina: (aluno as any).proxima_reposicao.disciplina || disciplinaAtualNome || 'Módulo Geral',
       tipo: (aluno as any).proxima_reposicao.tipo || 'reforco_laboratorio',
       descricao: (aluno as any).proxima_reposicao.observacao || (aluno as any).proxima_reposicao.descricao || 'Reposição agendada',
-      professorNome: (aluno as any).proxima_reposicao.professor || (aluno as any).proxima_reposicao.professorNome || aluno.professor_nome || 'Ronaldo Vasconcelos',
+      professorNome: (aluno as any).proxima_reposicao.professor || (aluno as any).proxima_reposicao.professorNome || aluno.professor_nome || undefined,
       status: (aluno as any).proxima_reposicao.status || 'agendada',
       horasCompensadas: (aluno as any).proxima_reposicao.duracao_horas || 2,
     } : undefined,
@@ -420,7 +420,7 @@ export function mapAlunoRowToAlunoMonitorado(
           disciplina: r.disciplina || disciplinaAtualNome || 'Módulo Geral',
           tipo: r.tipo || 'reforco_laboratorio',
           descricao: r.observacao || r.descricao || 'Reposição agendada',
-          professorNome: r.professor || r.professorNome || aluno.professor_nome || 'Ronaldo Vasconcelos',
+          professorNome: r.professor || r.professorNome || aluno.professor_nome || undefined,
           status: r.status || 'agendada',
           horasCompensadas: r.duracao_horas || 2,
         }))
@@ -444,7 +444,7 @@ export function mapAlunoRowToAlunoMonitorado(
 
     unidade: aluno.unidade,
 
-    cgdUrl: undefined,
+    cgdUrl: (aluno as any).cgd_url || undefined,
     cgdLaboratorio: undefined,
 
     diasSemAcesso: undefined,
