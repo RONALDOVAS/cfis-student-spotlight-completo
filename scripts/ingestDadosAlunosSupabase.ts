@@ -33,10 +33,10 @@ type NormalizedAluno = {
   mes_referencia_faltas: string;
   reposicoes_realizadas: number;
   dias_em_curso: number;
-  criticidade: 'critico' | 'moderado' | 'atencao' | 'normal';
-  tratativa_sugerida: 'aulao' | 'atividade_pratica' | 'acompanhamento' | 'normal';
-  status_tratativa: 'pendente' | 'em_andamento' | 'concluido';
-  status_matricula: 'ativo' | 'bloqueado_faltas' | 'trancado' | 'concluido';
+  criticidade: 'critico' | 'moderado' | 'atencao' | 'normal' | null;
+  tratativa_sugerida: 'aulao' | 'atividade_pratica' | 'acompanhamento' | 'normal' | null;
+  status_tratativa: 'pendente' | 'em_andamento' | 'concluido' | null;
+  status_matricula: 'ativo' | 'bloqueado_faltas' | 'trancado' | 'concluido' | null;
   bloqueado_automaticamente: boolean;
   motivo_bloqueio: string | null;
   total_disciplinas_grade: number | null;
@@ -140,33 +140,41 @@ function normalizeUnidade(value: unknown): 'filial' | 'matriz' | null {
 
 function normalizeCriticidade(value: unknown): NormalizedAluno['criticidade'] {
   const raw = textValue(value).toLowerCase();
+  if (!raw) return null;
   if (raw.includes('crit')) return 'critico';
   if (raw.includes('moder')) return 'moderado';
   if (raw.includes('aten')) return 'atencao';
-  return 'normal';
+  if (raw.includes('normal')) return 'normal';
+  return null;
 }
 
 function normalizeTratativa(value: unknown): NormalizedAluno['tratativa_sugerida'] {
   const raw = textValue(value).toLowerCase();
+  if (!raw) return null;
   if (raw.includes('aul')) return 'aulao';
   if (raw.includes('prát') || raw.includes('prat')) return 'atividade_pratica';
   if (raw.includes('acompan')) return 'acompanhamento';
-  return 'normal';
+  if (raw.includes('normal')) return 'normal';
+  return null;
 }
 
 function normalizeStatusTratativa(value: unknown): NormalizedAluno['status_tratativa'] {
   const raw = textValue(value).toLowerCase();
+  if (!raw) return null;
   if (raw.includes('concl')) return 'concluido';
   if (raw.includes('andamento')) return 'em_andamento';
-  return 'pendente';
+  if (raw.includes('pend')) return 'pendente';
+  return null;
 }
 
-function normalizeStatusAluno(value: unknown, faltasMes: number): NormalizedAluno['status_matricula'] {
+function normalizeStatusAluno(value: unknown): NormalizedAluno['status_matricula'] {
   const raw = textValue(value).toLowerCase();
-  if (faltasMes >= 3) return 'bloqueado_faltas';
+  if (!raw) return null;
   if (raw.includes('tranc')) return 'trancado';
   if (raw.includes('concl')) return 'concluido';
-  return 'ativo';
+  if (raw.includes('bloque')) return 'bloqueado_faltas';
+  if (raw.includes('ativo')) return 'ativo';
+  return null;
 }
 
 function normalizeSource(raw: unknown): RawRecord[] {
@@ -241,7 +249,7 @@ function normalizeAluno(raw: RawRecord, index: number): {
   );
 
   const bloqueado = faltasMes >= 3;
-  const statusMatricula = normalizeStatusAluno(raw.status_matricula, faltasMes);
+  const statusMatricula = normalizeStatusAluno(raw.status_matricula);
 
   const alunoId = uuidFromKey(`${unidade}:${contrato}`);
   const turma = textValue(raw.turma_nome, raw.TURMA_NOME, raw.turma, raw.TURMA);
