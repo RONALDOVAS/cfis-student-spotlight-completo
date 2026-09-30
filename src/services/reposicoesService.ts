@@ -7,12 +7,12 @@ export const CGD_REPOSICOES_JSON_URL = 'https://raw.githubusercontent.com/RONALD
 
 export function extrairTimestampReposicao(rep: ReposicaoAgendadaItem): number {
   try {
-    let dia = 1, mes = 1, ano = 2026;
+    let dia = 0, mes = 0, ano = 0;
     const s = (rep.data || '').trim();
-    if (s.includes('/')) { const p = s.split('/').map(Number); dia = p[0] || 1; mes = p[1] || 1; ano = p[2] || 2026; }
-    else if (s.includes('-')) { const p = s.split('-').map(Number); ano = p[0] || 2026; mes = p[1] || 1; dia = p[2] || 1; }
-    let h = 16, m = 0;
-    if (rep.horario_inicio?.includes(':')) { const p = rep.horario_inicio.split(':').map(Number); h = Number.isFinite(p[0]) ? p[0] : 16; m = Number.isFinite(p[1]) ? p[1] : 0; }
+    if (s.includes('/')) { const p = s.split('/').map(Number); dia = p[0] || 0; mes = p[1] || 0; ano = p[2] || 0; }
+    else if (s.includes('-')) { const p = s.split('-').map(Number); ano = p[0] || 0; mes = p[1] || 0; dia = p[2] || 0; }
+    let h = 0, m = 0;
+    if (rep.horario_inicio?.includes(':')) { const p = rep.horario_inicio.split(':').map(Number); h = Number.isFinite(p[0]) ? p[0] : 0; m = Number.isFinite(p[1]) ? p[1] : 0; }
     return new Date(ano, mes - 1, dia, h, m).getTime();
   } catch { return 0; }
 }
@@ -37,7 +37,7 @@ export function normalizarReposicaoItem(item: any): ReposicaoAgendadaItem {
     horario_fim: String(item.horario_fim || item.horarioFim || '18:00').trim(),
     duracao_horas: Number(item.duracao_horas || item.duracaoHoras || 2),
     disciplina: item.disciplina ? String(item.disciplina).trim() : 'Módulo Geral',
-    professor: item.professor ? String(item.professor).trim() : (item.professorNome || 'Ronaldo Vasconcelos'),
+    professor: item.professor ? String(item.professor).trim() : (item.professorNome ? String(item.professorNome).trim() : undefined),
     status: item.status === 'realizada' || item.status === 'cancelada' ? item.status : 'agendada',
     tipo: item.tipo || 'laboratorio', observacao: item.observacao || item.descricao || '',
     created_at: item.created_at || new Date().toISOString(), updated_at: item.updated_at || new Date().toISOString()
