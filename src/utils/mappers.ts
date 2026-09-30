@@ -348,16 +348,16 @@ export function mapAlunoRowToAlunoMonitorado(
         ? aluno.telefone
         : undefined,
 
-    curso: aluno.curso,
-    disciplinaAtual: disciplinaAtualNome,
+    curso: aluno.curso || '',
+    disciplinaAtual: disciplinaAtualNome || '',
 
-    turmaId: aluno.turma_nome,
-    turmaNome: aluno.turma_nome,
+    turmaId: aluno.turma_nome || '',
+    turmaNome: aluno.turma_nome || '',
 
-    professorResponsavel: aluno.professor_nome,
+    professorResponsavel: aluno.professor_nome || '',
 
-    dataInicio: aluno.data_inicio,
-    mesesContratoTotal: aluno.meses_contrato_total,
+    dataInicio: aluno.data_inicio || '',
+    mesesContratoTotal: aluno.meses_contrato_total ?? 0,
 
     dataTerminoContrato: prazos.dataTerminoContrato,
     diasContratoTotal: prazos.diasContratoTotal,
@@ -383,7 +383,7 @@ export function mapAlunoRowToAlunoMonitorado(
     faltasAcumuladas,
     faltasMesAtual,
     faltasMesAtualEfetivas,
-    mesReferenciaFaltas: aluno.mes_referencia_faltas,
+    mesReferenciaFaltas: aluno.mes_referencia_faltas || '',
 
     reposicoesRealizadas,
     reposicoesPendentes,
@@ -428,9 +428,9 @@ export function mapAlunoRowToAlunoMonitorado(
 
     diasEmCurso: aluno.dias_em_curso,
 
-    criticidade: aluno.criticidade,
-    tratativaSugerida: aluno.tratativa_sugerida,
-    statusTratativa: aluno.status_tratativa,
+    criticidade: aluno.criticidade || 'normal',
+    tratativaSugerida: aluno.tratativa_sugerida || 'normal',
+    statusTratativa: aluno.status_tratativa || 'pendente',
 
     statusMatricula,
     bloqueadoAutomaticamente,
