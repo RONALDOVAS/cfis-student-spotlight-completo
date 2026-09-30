@@ -25,7 +25,7 @@ type NormalizedAluno = {
   data_inicio: string;
   data_termino_contrato: string | null;
   dias_contrato_total: number | null;
-  meses_contrato_total: number;
+  meses_contrato_total: number | null;
   ultima_aula: string | null;
   ultimo_acesso: string | null;
   faltas_totais: number;
@@ -39,7 +39,7 @@ type NormalizedAluno = {
   status_matricula: 'ativo' | 'bloqueado_faltas' | 'trancado' | 'concluido';
   bloqueado_automaticamente: boolean;
   motivo_bloqueio: string | null;
-  total_disciplinas_grade: number;
+  total_disciplinas_grade: number | null;
   disciplinas_concluidas: number;
   unidade: 'filial' | 'matriz';
   created_at: string;
@@ -244,16 +244,21 @@ function normalizeAluno(raw: RawRecord, index: number): {
   const statusMatricula = normalizeStatusAluno(raw.status_matricula, faltasMes);
 
   const alunoId = uuidFromKey(`${unidade}:${contrato}`);
-  const turma = textValue(
-    raw.turma_nome,
-    raw.TURMA_NOME,
-    raw.turma,
-    raw.TURMA,
-  );
+  const turma = textValue(raw.turma_nome, raw.TURMA_NOME, raw.turma, raw.TURMA);
+  const professorNome = textValue(raw.professor_nome, raw.professor, raw.PROFESSOR);
+  const mesReferencia = textValue(raw.mes_referencia_faltas, raw.mes_referencia);
+  const mesesContrato = nullableNumber(raw.meses_contrato_total, raw.meses_contrato);
+  const totalGradeFonte = nullableNumber(raw.total_disciplinas_grade, raw.total_disciplinas);
+
+  if (!turma) errors.push('turma_nome ausente');
+  if (!professorNome) errors.push('professor_nome ausente');
+  if (!mesReferencia) errors.push('mes_referencia_faltas ausente');
+  if (mesesContrato === null) errors.push('meses_contrato_total ausente');
+  if (totalGradeFonte === null && !Array.isArray(raw.disciplinas)) errors.push('total_disciplinas_grade ausente');
+  if (errors.length) return { aluno: null, disciplinas: [], errors };
 
   const totalGrade = numberValue(
-    raw.total_disciplinas_grade,
-    raw.total_disciplinas,
+    totalGradeFonte,
     Array.isArray(raw.disciplinas) ? raw.disciplinas.length : undefined,
     Array.isArray(raw.disciplinas_pendentes) ? raw.disciplinas_pendentes.length : undefined,
     Array.isArray(raw.disciplinas_concluidas) ? raw.disciplinas_concluidas.length : undefined,
@@ -273,16 +278,16 @@ function normalizeAluno(raw: RawRecord, index: number): {
     curso,
     turma_nome: turma,
     professor_responsavel_id: nullableText(raw.professor_responsavel_id),
-    professor_nome: textValue(raw.professor_nome, raw.professor, raw.PROFESSOR),
+    professor_nome: professorNome,
     data_inicio: dataInicio,
     data_termino_contrato: normalizeDate(raw.data_termino_contrato ?? raw.data_fim_contrato),
     dias_contrato_total: nullableNumber(raw.dias_contrato_total),
-    meses_contrato_total: Math.max(1, numberValue(raw.meses_contrato_total, raw.meses_contrato, 12)),
+    meses_contrato_total: mesesContrato,
     ultima_aula: normalizeDate(raw.ultima_aula),
     ultimo_acesso: normalizeTimestamp(raw.ultimo_acesso),
     faltas_totais: Math.max(0, faltasTotais),
     faltas_mes_atual: Math.max(0, faltasMes),
-    mes_referencia_faltas: textValue(raw.mes_referencia_faltas, raw.mes_referencia, new Date().toISOString().slice(0, 7)),
+    mes_referencia_faltas: mesReferencia,
     reposicoes_realizadas: Math.max(0, numberValue(raw.reposicoes_realizadas, raw.reposicoesRealizadas)),
     dias_em_curso: Math.max(0, numberValue(raw.dias_em_curso, raw.dias_curso, raw.dias)),
     criticidade: normalizeCriticidade(raw.criticidade),
@@ -311,7 +316,7 @@ function normalizeAluno(raw: RawRecord, index: number): {
     if (!nomeDisciplina || carga <= 0) return;
 
     const horasCursadas = Math.max(0, numberValue(d.horas_cursadas, d.horas_cumpridas));
-    const horasEsperadas = Math.max(0, numberValue(d.horas_esperadas, d.horas_planejadas, carga));
+    const horasEsperadas = Math.max(0, numberValue(d.horas_esperadas, d.horas_planejadas));
     const percentual = Math.max(0, Math.min(100, (horasCursadas / carga) * 100));
     const excedentes = Math.max(0, horasCursadas - carga);
     const statusRaw = textValue(d.status).toLowerCase();
@@ -429,7 +434,13 @@ async function main() {
   });
 
   for (let i = 0; i < alunos.length; i += BATCH_SIZE) {
-    const batch = alunos.slice(i, i + BATCH_SIZE);
+    const batch = alunos.slice(i, i + BATCH_SIZE).map((aluno) => {
+      const payload = { ...aluno } as Record<string, unknown>;
+      for (const key of ['criticidade', 'tratativa_sugerida', 'status_tratativa', 'status_matricula']) {
+        if (payload[key] === null) delete payload[key];
+      }
+      return payload;
+    });
     const { error } = await supabase
       .from('alunos')
       .upsert(batch, { onConflict: 'cgd_matricula_id' });
